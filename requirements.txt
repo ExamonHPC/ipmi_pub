@@ -1,0 +1,4 @@
+paho-mqtt==1.6.1
+concurrent-log-handler==0.9.25
+
+

@@ -1,15 +1,15 @@
 IPMI to MQTT publisher (OOB mode)
 =================================
 
-This script istantiate a pool of workers, one for each BMC host listed in the configuration file.
-Every sampling interval, a worker reads all (default) available sensors and send
+This script instantiates a pool of workers, one for each BMC host listed in the configuration file.
+At every sampling interval, a worker reads all (default) available sensors and sends
 the values to the corresponding MQTT topic.
 
-Prerequisities
+Prerequisites
 --------------
 
-This script is intended to be executed on a service node having access both to the 
-management and the public network. It needs the python MQTT library and one of the 
+This script is intended to be executed on a service node with access to the 
+management and the public network. It needs the Python MQTT library and one of the  
 ``ipmitool/freeipmi`` commands installed.
 
 Python 
@@ -54,7 +54,7 @@ MQTT_BROKER
 MQTT_PORT
   Port number of the MQTT broker server.
 MQTT_TOPIC    
-  Initial section of the MQTT topic which define the *sensor location* as per Examon datamodel specifications
+  The initial section of the MQTT topic which define the *sensor location* as per Examon datamodel specifications
 MQTT_USER
   Username of the MQTT user
 MQTT_PASSWORD
@@ -64,7 +64,7 @@ IPMI_SENS_TAGS
 IPMI_OPTIONS
   Additional options to pass to the tool in use (common to all the BMCs)
 IPMI_RENAME_LABEL
-  Dictionary to be used to rename metrics returned by the tool. Useful in cases where metric names contain typos or inaccuracies.
+  A dictionary to be used to rename metrics returned by the tool. Useful in cases where metric names contain typos or inaccuracies.
   Example:
   Given the following output from the tool
   ::
@@ -86,7 +86,7 @@ LOG_FILENAME
 PID_FILENAME     
   Name of the PID file.
 BMCIP_FILENAME   
-  File containing the list of IPs and hostnames of the nodes to be monitored.
+  The file containing the list of IPs and hostnames of the nodes to be monitored.
 BMC_USERNAME     
   Username of the BMC user.
 BMC_PASSWORD
@@ -101,13 +101,13 @@ The four headings in the file are:
 BMC-IP
   IP Address of the BMC.
 HOSTNAME
-  Hostname of the node.
+  The hostname of the node.
 USER
   Username of the BMC user.
 PASSWORD
   Password of the BMC user.
 CUSTOM_OPTIONS
-  Additional options to pass to the tool in use (i.e the sdr file) when connecting to the BMC.
+  Additional options to pass to the tool in use (i.e. the sdr file) when connecting to the BMC.
 
 
 An initial file can be obtained from a given hostfile, for example:
@@ -137,7 +137,7 @@ Options
       -x X                  pid filename
       -l L                  log filename
       -L L                  log level
-      -f F                  BMC ip adresses filename
+      -f F                  BMC ip addresses filename
       -U U                  BMC username
       -P P                  BMC password
       -m M                  MQTT username

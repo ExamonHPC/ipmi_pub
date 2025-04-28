@@ -1,13 +1,11 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-
     IPMItool/freeipmi MQTT publisher
 
     Created on Fri Dec 19 12:20:56 2014
 
     @author: francesco.beneventi@unibo.it
-
 """
 import re
 import os
@@ -23,6 +21,7 @@ import configparser
 from subprocess import Popen, PIPE
 import paho.mqtt.client as mqtt
 import multiprocessing as mp
+from multiprocessing.dummy import Pool as ThreadPool
 import signal
 from daemon import Daemon
 
@@ -51,6 +50,8 @@ class IpmiPub():
         self.mqtt_topic = self.build_base_topic(mqtt_base_topic)
         self.timeout = timeout
         self.client = None
+        self.process = None
+        self.terminate_event = False
         mp.current_process().name = self.hostinfo['hostname']
 
     def build_base_topic(self, mqtt_base_topic):
@@ -66,10 +67,10 @@ class IpmiPub():
             rack, chassis, slot = server_coord
 
         return topic.format(mqtt_base_topic,
-                            self.hostinfo['hostname'],
-                            rack,
-                            chassis,
-                            slot)
+                          self.hostinfo['hostname'],
+                          rack,
+                          chassis,
+                          slot)
 
     def setup_cmd(self, tool_par):
         """
@@ -79,39 +80,39 @@ class IpmiPub():
 
         if self.TOOL_PATH == 'ipmitool':
             cmd = self.TOOL_PATH
-            cmd += (' -I lanplus')
-            cmd += (' -H %s' % self.hostinfo['bmc_ip'])
+            cmd += ' -I lanplus'
+            cmd += ' -H %s' % self.hostinfo['bmc_ip']
             if self.hostinfo['username'] is not None:
-                cmd += (' -U %s' % self.hostinfo['username'])
+                cmd += ' -U %s' % self.hostinfo['username']
             if self.hostinfo['password'] is not None:
-                cmd += (' -P %s' % self.hostinfo['password'])
+                cmd += ' -P %s' % self.hostinfo['password']
             if self.hostinfo['custom_opt'] is not None:
-                cmd += (' %s' % self.hostinfo['custom_opt'])           
-            cmd += (' ')
-            cmd += (IPMI_OPTIONS)
+                cmd += ' %s' % self.hostinfo['custom_opt']
+            cmd += ' '
+            cmd += IPMI_OPTIONS
 
         if self.TOOL_PATH == 'ipmi-sensors':
             cmd = self.TOOL_PATH
-            cmd += (' -h %s' % self.hostinfo['bmc_ip'])
+            cmd += ' -h %s' % self.hostinfo['bmc_ip']
             if self.hostinfo['username'] is not None:
-                cmd += (' -u %s' % self.hostinfo['username'])
+                cmd += ' -u %s' % self.hostinfo['username']
             if self.hostinfo['password'] is not None:
-                cmd += (' -p %s' % self.hostinfo['password'])
-            cmd += (' ')
-            cmd += (IPMI_OPTIONS)
+                cmd += ' -p %s' % self.hostinfo['password']
+            cmd += ' '
+            cmd += IPMI_OPTIONS
 
         if self.TOOL_PATH == 'openbmctool':
             cmd = self.TOOL_PATH
-            cmd += (' -H %s' % self.hostinfo['bmc_ip'])
+            cmd += ' -H %s' % self.hostinfo['bmc_ip']
             if self.hostinfo['username'] is not None:
-                cmd += (' -U %s' % self.hostinfo['username'])
+                cmd += ' -U %s' % self.hostinfo['username']
             if self.hostinfo['password'] is not None:
-                cmd += (' -P %s' % self.hostinfo['password'])
-            cmd += (' ')
-            cmd += (IPMI_OPTIONS)
+                cmd += ' -P %s' % self.hostinfo['password']
+            cmd += ' '
+            cmd += IPMI_OPTIONS
 
-        cmd += (' %s' % tool_par)
-        cmd += (' 2>&1')
+        cmd += ' %s' % tool_par
+        cmd += ' 2>&1'
 
         return cmd
 
@@ -120,17 +121,21 @@ class IpmiPub():
         output = ''
 
         if self.hostinfo['password'] is not None:
-            logger.debug("[%s] Executing command: %s", mp.current_process().name, cmd.replace(self.hostinfo['password'], '*' * 8))
+            logger.debug("[%s] Executing command: %s", mp.current_process().name,
+                        cmd.replace(self.hostinfo['password'], '*' * 8))
         else:
             logger.debug("[%s] Executing command: %s", mp.current_process().name, cmd)
 
         try:
             if self.timeout:
                 cmd = ('timeout %s ' % self.timeout) + cmd
-            child = Popen(cmd, shell=True, text=True, stdout=PIPE)
-            output = child.communicate()[0]
-            if child.returncode != 0:
-                logger.error("[%s] Error in run_cmd(): %s - cmd: %s - ret %s", mp.current_process().name, output, cmd, child.returncode)
+            self.process = Popen(cmd, shell=True, text=True, stdout=PIPE)
+            output = self.process.communicate()[0]
+            if self.process.returncode != 0:
+                logger.error("[%s] Error in run_cmd(): %s - cmd: %s - ret %s",
+                           mp.current_process().name, output, cmd, self.process.returncode)
+                if self.terminate_event:
+                    return output
         except Exception:
             logger.exception("[%s] Exception in run_cmd(): ", mp.current_process().name)
 
@@ -183,9 +188,9 @@ class IpmiPub():
             Daemon main code loop
         """
         info_txt = "[%s] Binding IPMI publisher [%s] to: Host=%s BMC_IP=%s tool_path=%s" % (
-            mp.current_process().name, mp.current_process().name, self.hostinfo['hostname'], 
+            mp.current_process().name, mp.current_process().name, self.hostinfo['hostname'],
             self.hostinfo['bmc_ip'], self.TOOL_PATH)
-        
+
         logger.info(info_txt)
 
         self.client = mqtt.Client()
@@ -208,23 +213,27 @@ class IpmiPub():
 
         logger.info("[%s] Running... ", mp.current_process().name)
         while True:
-            time.sleep(float(TS) - (time.time() % float(TS)))
-            timestamp = time.time()
-            ipmiout = self.run_cmd(cmd)
-            sens_dict = self.parse_cmd_output(ipmiout)
-            for k, v in sens_dict.items():
-                mqtt_str = str(v[0])
-                mqtt_str += (";%.3f" % (math.floor(timestamp * 100) / 100))
-                mqtt_tpc = self.mqtt_topic
-                mqtt_tpc += '/units/' + (v[1]).replace(' ', '_').replace('+', '_').replace('#', '_').replace('/', '_')
-                mqtt_tpc += '/' + (k).replace(' ', '_').replace('+', '_').replace('#', '_').replace('/', '_')
-                logger.debug("[%s] Topic: %s", mp.current_process().name, mqtt_tpc)
-                logger.debug("[%s] Payload: %s", mp.current_process().name, mqtt_str)
-                try:
-                    self.client.publish(mqtt_tpc, payload=str(mqtt_str), qos=0, retain=False)
-                except Exception:
-                    logger.exception("[%s] Exception in MQTT publish: ", mp.current_process().name)
-                    continue
+            if not self.terminate_event:
+                time.sleep(float(TS) - (time.time() % float(TS)))
+                timestamp = time.time()
+                ipmiout = self.run_cmd(cmd)
+                sens_dict = self.parse_cmd_output(ipmiout)
+                for k, v in sens_dict.items():
+                    mqtt_str = str(v[0])
+                    mqtt_str += (";%.3f" % (math.floor(timestamp * 100) / 100))
+                    mqtt_tpc = self.mqtt_topic
+                    mqtt_tpc += '/units/' + (v[1]).replace(' ', '_').replace('+', '_').replace('#', '_').replace('/', '_')
+                    mqtt_tpc += '/' + (k).replace(' ', '_').replace('+', '_').replace('#', '_').replace('/', '_')
+                    logger.debug("[%s] Topic: %s", mp.current_process().name, mqtt_tpc)
+                    logger.debug("[%s] Payload: %s", mp.current_process().name, mqtt_str)
+                    try:
+                        self.client.publish(mqtt_tpc, payload=str(mqtt_str), qos=0, retain=False)
+                    except Exception:
+                        logger.exception("[%s] Exception in MQTT publish: ", mp.current_process().name)
+                        continue
+            else:
+                logger.info("[%s] Terminating...", mp.current_process().name)
+                return
 
     def on_connect(self, client, userdata, flags, rc):
         """MQTT connection callback"""
@@ -234,6 +243,18 @@ class IpmiPub():
             self.client.disconnect()
         else:
             logger.info("[%s] Connected with result code: %s", mp.current_process().name, str(rc))
+
+    def cleanup(self):
+        """Clean up resources"""
+        self.terminate_event = True
+        if self.client:
+            self.client.loop_stop()
+            self.client.disconnect()
+        if self.process and self.process.poll() is None:
+            try:
+                self.process.terminate()
+            except Exception:
+                pass
 
 
 def get_ipmi_hosts(conf_file, username, passw):
@@ -261,12 +282,49 @@ def get_ipmi_hosts(conf_file, username, passw):
     return ipmi_db
 
 
-def worker(hostinfo):
+def thread_worker(hostinfo):
     """
-        Worker process code
+        Thread worker code
     """
     daemon = IpmiPub(hostinfo, tool_path='ipmitool', mqtt_base_topic=MQTT_TOPIC)
     return daemon.run()
+
+
+def process_worker(hostinfo_group):
+    """
+        Process worker that manages multiple threads
+    """
+
+    thread_pool = ThreadPool(len(hostinfo_group))
+
+    daemons = []
+
+    for hostinfo in hostinfo_group:
+        daemon = IpmiPub(hostinfo, tool_path='ipmitool', mqtt_base_topic=MQTT_TOPIC)
+        daemons.append(daemon)
+
+    def handle_signal(signum, frame):
+        logger.info(f"[{mp.current_process().name}] Received signal {signum}, cleaning up...")
+        for daemon in daemons:
+            daemon.cleanup()
+        thread_pool.close()
+        thread_pool.join()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
+    try:
+        thread_pool.map(lambda daemon: daemon.run(), daemons)
+        thread_pool.close()
+        thread_pool.join()
+    except Exception as e:
+        logger.exception(f"[{mp.current_process().name}] Exception in thread pool: {str(e)}")
+        for daemon in daemons:
+            daemon.cleanup()
+        thread_pool.close()
+        thread_pool.join()
+        raise
 
 
 def kill_child_processes(signum, frame):
@@ -282,6 +340,12 @@ def kill_child_processes(signum, frame):
     sys.exit(0)
 
 
+def split_list(lst, n):
+    """Split list into n chunks of approximately equal size"""
+    chunk_size = max(1, len(lst) // n)
+    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
+
+
 if __name__ == '__main__':
     config = configparser.RawConfigParser()
     config.read('ipmi_pub.conf')
@@ -291,7 +355,7 @@ if __name__ == '__main__':
     MQTT_USER = config.get('MQTT', 'MQTT_USER')
     MQTT_PASSWORD = config.get('MQTT', 'MQTT_PASSWORD')
     IPMI_SENS_TAGS = config.get('IPMI', 'IPMI_SENS_TAGS').split(',')
-    IPMI_SENS_TAGS = [(item).strip() for item in IPMI_SENS_TAGS]  
+    IPMI_SENS_TAGS = [(item).strip() for item in IPMI_SENS_TAGS]
     IPMI_OPTIONS = config.get('IPMI', 'IPMI_OPTIONS')
     IPMI_RENAME_LABEL = json.loads(config.get('IPMI', 'IPMI_RENAME_LABEL'))
     TS = config.getfloat('Daemon', 'TS')
@@ -301,6 +365,7 @@ if __name__ == '__main__':
     BMCIP_FILENAME = config.get('Daemon', 'BMCIP_FILENAME')
     BMC_USERNAME = config.get('Daemon', 'BMC_USERNAME')
     BMC_PASSWORD = config.get('Daemon', 'BMC_PASSWORD')
+    THREADS_PER_PROCESS = config.getint('Daemon', 'THREADS_PER_PROCESS', fallback=5)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("runmode", choices=["run", "start", "stop", "restart"], help="Run mode")
@@ -318,6 +383,7 @@ if __name__ == '__main__':
     parser.add_argument("-r", help="MQTT password")
     parser.add_argument("-o", help="Additional options for the IPMI command")
     parser.add_argument("-n", help="Rename IPMI labels (dictionary)")
+    parser.add_argument("-T", help="Threads per process", type=int)
 
     args = parser.parse_args()
 
@@ -349,10 +415,14 @@ if __name__ == '__main__':
         IPMI_OPTIONS = args.o
     if args.n:
         IPMI_RENAME_LABEL = args.n
+    if args.T:
+        THREADS_PER_PROCESS = args.T
 
     logger = logging.getLogger("root")
-    handler = ConcurrentRotatingFileHandler(LOGFILE, mode='a', maxBytes=LOGFILE_SIZE_B, backupCount=BACKUP_COUNT)
-    log_formatter = logging.Formatter(fmt='%(levelname)s - %(asctime)s - %(name)s - %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
+    handler = ConcurrentRotatingFileHandler(LOGFILE, mode='a', maxBytes=LOGFILE_SIZE_B,
+                                          backupCount=BACKUP_COUNT)
+    log_formatter = logging.Formatter(fmt='%(levelname)s - %(asctime)s - %(name)s - %(message)s',
+                                    datefmt='%d/%m/%Y %H:%M:%S')
     handler.setFormatter(log_formatter)
     logger.addHandler(handler)
     logger.setLevel(LOG_LEVEL)
@@ -366,14 +436,12 @@ if __name__ == '__main__':
 
     daemon = Daemon(PID_FILENAME)
 
-    if args.runmode == 'stop':     
+    if args.runmode == 'stop':
         print("Terminating daemon...")
         daemon.stop()
         sys.exit(0)
     elif args.runmode in ['run', 'start', 'restart']:
         print("Init workers")
-        original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-        original_sigterm_handler = signal.signal(signal.SIGTERM, kill_child_processes)
 
         if args.runmode == 'start':
             print("Daemonize..")
@@ -381,16 +449,27 @@ if __name__ == '__main__':
         elif args.runmode == 'restart':
             print("Restarting Daemon..")
             daemon.restart()
-        else:
-            pass
 
-        pool = mp.Pool(len(ipmi_hosts))
-        signal.signal(signal.SIGINT, original_sigint_handler)
+        # Group hosts for process/thread allocation
+        host_groups = []
+        if THREADS_PER_PROCESS > 1:
+            # Calculate optimal number of processes based on hosts and threads
+            num_processes = max(1, len(ipmi_hosts) // THREADS_PER_PROCESS +
+                              (1 if len(ipmi_hosts) % THREADS_PER_PROCESS else 0))
+            host_groups = split_list(ipmi_hosts, num_processes)
+            logger.info(f"Using {num_processes} processes with up to {THREADS_PER_PROCESS} threads each "
+                       f"for {len(ipmi_hosts)} hosts")
+            pool = mp.Pool(num_processes)
+        else:
+            # Fallback to original behavior - one process per host
+            host_groups = [[host] for host in ipmi_hosts]
+            logger.info(f"Using {len(ipmi_hosts)} processes with 1 thread each")
+            pool = mp.Pool(len(ipmi_hosts))
 
         print("Starting jobs...")
         i = 1
-        for hostinfo in ipmi_hosts:
-            pool.apply_async(worker, args=(hostinfo,))
+        for host_group in host_groups:
+            pool.apply_async(process_worker, args=(host_group,))
             if not (i % SLOWED_START_GROUP_SIZE):
                 time.sleep(SLOWED_START_INTERVAL)
             i += 1

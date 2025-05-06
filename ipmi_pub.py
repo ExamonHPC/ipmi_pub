@@ -286,7 +286,7 @@ def thread_worker(hostinfo):
     """
         Thread worker code
     """
-    daemon = IpmiPub(hostinfo, tool_path='ipmitool', mqtt_base_topic=MQTT_TOPIC)
+    daemon = IpmiPub(hostinfo, tool_path='ipmitool', mqtt_base_topic=MQTT_TOPIC, timeout=TIMEOUT)
     return daemon.run()
 
 
@@ -300,7 +300,7 @@ def process_worker(hostinfo_group):
     daemons = []
 
     for hostinfo in hostinfo_group:
-        daemon = IpmiPub(hostinfo, tool_path='ipmitool', mqtt_base_topic=MQTT_TOPIC)
+        daemon = IpmiPub(hostinfo, tool_path='ipmitool', mqtt_base_topic=MQTT_TOPIC, timeout=TIMEOUT)
         daemons.append(daemon)
 
     def handle_signal(signum, frame):
@@ -359,6 +359,7 @@ if __name__ == '__main__':
     IPMI_OPTIONS = config.get('IPMI', 'IPMI_OPTIONS')
     IPMI_RENAME_LABEL = json.loads(config.get('IPMI', 'IPMI_RENAME_LABEL'))
     TS = config.getfloat('Daemon', 'TS')
+    TIMEOUT = config.get('Daemon', 'TIMEOUT', fallback="5")
     LOGFILE = config.get('Daemon', 'LOG_FILENAME')
     LOG_LEVEL = config.get('Daemon', 'LOG_LEVEL')
     PID_FILENAME = config.get('Daemon', 'PID_FILENAME')
@@ -369,54 +370,23 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("runmode", choices=["run", "start", "stop", "restart"], help="Run mode")
-    parser.add_argument("-b", help="IP address of the MQTT broker")
-    parser.add_argument("-p", help="Port of the MQTT broker")
-    parser.add_argument("-t", help="MQTT topic")
-    parser.add_argument("-s", help="Sampling time (seconds)")
-    parser.add_argument("-x", help="pid filename")
-    parser.add_argument("-l", help="log filename")
-    parser.add_argument("-L", help="log level")
-    parser.add_argument("-f", help="BMC ip adresses filename")
-    parser.add_argument("-U", help="BMC username")
-    parser.add_argument("-P", help="BMC password")
-    parser.add_argument("-m", help="MQTT username")
-    parser.add_argument("-r", help="MQTT password")
-    parser.add_argument("-o", help="Additional options for the IPMI command")
-    parser.add_argument("-n", help="Rename IPMI labels (dictionary)")
-    parser.add_argument("-T", help="Threads per process", type=int)
-
+    parser.add_argument("-b", dest="MQTT_BROKER", help="IP address of the MQTT broker")
+    parser.add_argument("-p", dest="MQTT_PORT", help="Port of the MQTT broker")
+    parser.add_argument("-t", dest="MQTT_TOPIC", help="MQTT topic")
+    parser.add_argument("-s", dest="TS", type=float, help="Sampling time (seconds)")
+    parser.add_argument("-x", dest="PID_FILENAME", help="pid filename")
+    parser.add_argument("-l", dest="LOGFILE", help="log filename")
+    parser.add_argument("-L", dest="LOG_LEVEL", help="log level")
+    parser.add_argument("-f", dest="BMCIP_FILENAME", help="BMC ip adresses filename")
+    parser.add_argument("-U", dest="BMC_USERNAME", help="BMC username")
+    parser.add_argument("-P", dest="BMC_PASSWORD", help="BMC password")
+    parser.add_argument("-m", dest="MQTT_USER", help="MQTT username")
+    parser.add_argument("-r", dest="MQTT_PASSWORD", help="MQTT password")
+    parser.add_argument("-o", dest="IPMI_OPTIONS", help="Additional options for the IPMI command")
+    parser.add_argument("-n", dest="IPMI_RENAME_LABEL", help="Rename IPMI labels (JSON dictionary string)")
+    parser.add_argument("-T", dest="THREADS_PER_PROCESS", type=int, help="Threads per process")
+    
     args = parser.parse_args()
-
-    if args.b:
-        MQTT_BROKER = args.b
-    if args.p:
-        MQTT_PORT = args.p
-    if args.t:
-        MQTT_TOPIC = args.t
-    if args.m:
-        MQTT_USER = args.m
-    if args.r:
-        MQTT_PASSWORD = args.r
-    if args.s:
-        TS = float(args.s)
-    if args.x:
-        PID_FILENAME = args.x
-    if args.l:
-        LOGFILE = args.l
-    if args.L:
-        LOG_LEVEL = args.L
-    if args.f:
-        BMCIP_FILENAME = args.f
-    if args.U:
-        BMC_USERNAME = args.U
-    if args.P:
-        BMC_PASSWORD = args.P
-    if args.o:
-        IPMI_OPTIONS = args.o
-    if args.n:
-        IPMI_RENAME_LABEL = args.n
-    if args.T:
-        THREADS_PER_PROCESS = args.T
 
     logger = logging.getLogger("root")
     handler = ConcurrentRotatingFileHandler(LOGFILE, mode='a', maxBytes=LOGFILE_SIZE_B,

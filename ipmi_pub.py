@@ -390,7 +390,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    logger = logging.getLogger("root")
+    logger = logging.getLogger("examon")
     handler = ConcurrentRotatingFileHandler(LOGFILE, mode='a', maxBytes=LOGFILE_SIZE_B,
                                           backupCount=BACKUP_COUNT)
     log_formatter = logging.Formatter(fmt='%(levelname)s - %(asctime)s - %(name)s - %(message)s',

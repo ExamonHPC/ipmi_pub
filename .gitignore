@@ -3,3 +3,5 @@
 *.log
 *.log.*
 *.bak
+hosts_file
+ipmi_pub.conf

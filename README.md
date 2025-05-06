@@ -74,6 +74,7 @@ Entries of the `.conf` file to be defined for this plugin:
 - **BMCIP_FILENAME**: The file containing the list of IPs and hostnames of the nodes to be monitored.
 - **BMC_USERNAME**: Username of the BMC user.
 - **BMC_PASSWORD**: Password of the BMC user.
+- **THREADS_PER_PROCESS**: Number of threads per process for hybrid process/thread parallelism (default: 5). Setting to 1 will use the original process-only model.
 
 ### BMC IP file
 
@@ -97,7 +98,7 @@ cat /etc/hosts | grep '\-bmc' | awk '{print $1 " " $3}' | tee bmc_ip_file
 
 ```
 usage: ipmi_pub.py [-h] [-b B] [-p P] [-t T] [-s S] [-x X] [-l L] [-L L]
-                  [-f F] [-U U] [-P P] [-m M] [-r R] [-o O] [-n N]
+                  [-f F] [-U U] [-P P] [-m M] [-r R] [-o O] [-n N] [-T T]
                   {run,start,stop,restart}
 
 positional arguments:
@@ -119,6 +120,7 @@ optional arguments:
   -r R                  MQTT password
   -o O                  Additional options for the IPMI command
   -n N                  Rename IPMI labels (dictionary)
+  -T T                  Threads per process
 ```
 
 ## Run
@@ -128,6 +130,16 @@ Execute as:
 ```bash
 python ipmi_pub.py -U <username> -P <password> -f <bmc_ip_file> run
 ```
+
+### Thread-based parallelism
+
+The script now supports hybrid process/thread parallelism to optimize resource usage when monitoring many servers:
+
+```bash
+python ipmi_pub.py -U <username> -P <password> -f <bmc_ip_file> -T 10 run
+```
+
+This will create process groups, each running up to 10 threads to monitor servers. This approach is more resource-efficient than the default process-only model when dealing with large numbers of servers.
 
 ## Systemd
 

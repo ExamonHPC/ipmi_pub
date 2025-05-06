@@ -134,6 +134,8 @@ class IpmiPub():
             if self.process.returncode != 0:
                 logger.error("[%s] Error in run_cmd(): %s - cmd: %s - ret %s",
                            mp.current_process().name, output, cmd, self.process.returncode)
+                if self.process.returncode == 124:
+                    logger.error("[%s] Command timed out, current timeout: %s", mp.current_process().name, self.timeout)
                 if self.terminate_event:
                     return output
         except Exception:
@@ -359,7 +361,7 @@ if __name__ == '__main__':
     IPMI_OPTIONS = config.get('IPMI', 'IPMI_OPTIONS')
     IPMI_RENAME_LABEL = json.loads(config.get('IPMI', 'IPMI_RENAME_LABEL'))
     TS = config.getfloat('Daemon', 'TS')
-    TIMEOUT = config.get('Daemon', 'TIMEOUT', fallback="5")
+    TIMEOUT = config.get('Daemon', 'TIMEOUT', fallback="10")
     LOGFILE = config.get('Daemon', 'LOG_FILENAME')
     LOG_LEVEL = config.get('Daemon', 'LOG_LEVEL')
     PID_FILENAME = config.get('Daemon', 'PID_FILENAME')
